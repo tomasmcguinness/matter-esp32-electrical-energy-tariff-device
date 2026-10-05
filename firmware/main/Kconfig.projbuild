@@ -1,0 +1,47 @@
+menu "Electrical Energy Tariff Device"
+
+    config TARIFF_TIMEZONE
+        string "Local timezone (POSIX TZ)"
+        default "GMT0BST,M3.5.0/1,M10.5.0"
+        help
+            Pushed schedules use local wall-clock times; this turns them into the UTC times
+            the device works in. The default is UK time.
+
+    config TARIFF_SNTP_SERVER
+        string "SNTP server"
+        default "pool.ntp.org"
+
+    config MQTT_HOST
+        string "MQTT host"
+        default ""
+        help
+            Broker the cloud page publishes prices to: a hostname such as <cluster>.hivemq.cloud,
+            or an IPv4 or IPv6 address. Leave empty to disable pushed prices.
+
+    config MQTT_PORT
+        int "MQTT port"
+        range 1 65535
+        default 8883
+
+    config MQTT_USE_TLS
+        bool "Connect over TLS"
+        default y
+        help
+            Verifies the broker against the built-in certificate bundle. Turn off for a local
+            broker on plain MQTT (usually port 1883).
+
+    config MQTT_USERNAME
+        string "MQTT username"
+        default ""
+
+    config MQTT_PASSWORD
+        string "MQTT password"
+        default ""
+
+    config MQTT_TOPIC_PREFIX
+        string "MQTT topic prefix"
+        default "electrical-energy-tariff"
+        help
+            The device subscribes to <prefix>/<device id>/schedule.
+
+endmenu

@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tariff Price Simulator</title>
+  <script src="https://unpkg.com/mqtt@5/dist/mqtt.min.js"></script>
+  <style>
+    :root {
+      --bg: #f7f7f8;
+      --surface: #ffffff;
+      --text: #1d1d1f;
+      --muted: #6b6b70;
+      --border: #d9d9de;
+      --accent: #0b6bcb;
+      --accent-text: #ffffff;
+      --ok: #1a7f37;
+      --error: #c62828;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #161618;
+        --surface: #202023;
+        --text: #ececf0;
+        --muted: #a0a0a8;
+        --border: #3a3a40;
+        --accent: #4d9be6;
+        --accent-text: #0b0b0c;
+        --ok: #4cc26a;
+        --error: #ef6a6a;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    main { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; }
+    h1 { font-size: 1.5rem; margin: 0 0 4px; }
+    h2 { font-size: 1.05rem; margin: 0 0 12px; }
+    p.lead { color: var(--muted); margin: 0 0 24px; }
+    section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    details summary { cursor: pointer; font-weight: 600; }
+    .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 12px; }
+    label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 4px; }
+    input {
+      width: 100%;
+      padding: 7px 9px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text);
+      font: inherit;
+    }
+    input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    button {
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font: inherit;
+      cursor: pointer;
+    }
+    button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+    button:disabled { opacity: 0.6; cursor: default; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+    .toolbar input { width: 110px; }
+    .status { min-height: 1.4em; margin: 0; }
+    .status.ok { color: var(--ok); }
+    .status.error { color: var(--error); }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 4px 6px; text-align: left; border-bottom: 1px solid var(--border); }
+    th { font-size: 0.8rem; color: var(--muted); font-weight: 600; }
+    td.time { font-variant-numeric: tabular-nums; white-space: nowrap; width: 1%; }
+    td.price { width: 140px; }
+    td.price input { text-align: right; font-variant-numeric: tabular-nums; }
+    tr.now td { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+    td.copy { width: 1%; }
+    td.copy button { padding: 4px 8px; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Tariff price simulator</h1>
+  <p class="lead">Set a price for each half-hour of the day and save. The prices are pushed to the device, which publishes the current one through the Matter Commodity Price cluster.</p>
+
+  <section>
+    <details id="settings">
+      <summary>Connection</summary>
+      <div class="fields">
+        <div><label for="broker">Broker WebSocket URL</label><input id="broker" placeholder="wss://xxxx.hivemq.cloud:8884/mqtt"></div>
+        <div><label for="username">Username</label><input id="username" autocomplete="username"></div>
+        <div><label for="password">Password</label><input id="password" type="password" autocomplete="current-password"></div>
+        <div><label for="device">Device ID</label><input id="device" placeholder="from 'matter esp tariff status'"></div>
+        <div><label for="prefix">Topic prefix</label><input id="prefix" value="electrical-energy-tariff"></div>
+      </div>
+    </details>
+  </section>
+
+  <section>
+    <h2>Prices (p/kWh, device local time)</h2>
+    <div class="toolbar">
+      <button id="load">Load saved</button>
+      <span>Fill all with</span>
+      <input id="fillValue" type="number" step="0.001" min="0" aria-label="Price to fill every slot with">
+      <button id="fill">Fill</button>
+      <span style="flex:1"></span>
+      <button id="save" class="primary">Save &amp; push</button>
+    </div>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <table>
+      <thead><tr><th scope="col">Start</th><th scope="col">Price</th><th scope="col">Label (optional)</th><th scope="col"><span class="visually-hidden">Copy</span></th></tr></thead>
+      <tbody id="slots"></tbody>
+    </table>
+  </section>
+</main>
+
+<script>
+  const SLOTS = 48;
+  const settingIds = ['broker', 'username', 'password', 'device', 'prefix'];
+  const $ = (id) => document.getElementById(id);
+
+  function storageGet(key) { try { return localStorage.getItem(key); } catch { return null; } }
+  function storageSet(key, value) { try { localStorage.setItem(key, value); } catch { /* not available */ } }
+
+  for (const id of settingIds) {
+    const saved = storageGet('sim.' + id);
+    if (saved !== null) $(id).value = saved;
+    $(id).addEventListener('change', () => storageSet('sim.' + id, $(id).value.trim()));
+  }
+  if (!$('broker').value || !$('device').value) $('settings').open = true;
+
+  const slotTime = (i) => String(Math.floor(i / 2)).padStart(2, '0') + ':' + (i % 2 ? '30' : '00');
+
+  const tbody = $('slots');
+  for (let i = 0; i < SLOTS; i++) {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      `<td class="time">${slotTime(i)}</td>` +
+      `<td class="price"><input type="number" step="0.001" min="0" aria-label="Price from ${slotTime(i)}"></td>` +
+      `<td><input maxlength="32" aria-label="Label from ${slotTime(i)}"></td>` +
+      `<td class="copy">${i ? `<button type="button" title="Copy the previous slot">Copy ↑</button>` : ''}</td>`;
+    if (i) {
+      tr.querySelector('button').addEventListener('click', () => {
+        const prev = tbody.rows[i - 1].querySelectorAll('input');
+        const cur = tr.querySelectorAll('input');
+        cur[0].value = prev[0].value;
+        cur[1].value = prev[1].value;
+      });
+    }
+    tbody.appendChild(tr);
+  }
+
+  // Highlights the slot that's current in this browser's time zone, which is usually the device's.
+  function markNow() {
+    const d = new Date();
+    const current = d.getHours() * 2 + (d.getMinutes() >= 30 ? 1 : 0);
+    [...tbody.rows].forEach((row, i) => row.classList.toggle('now', i === current));
+  }
+  markNow();
+  setInterval(markNow, 60 * 1000);
+
+  function setStatus(text, kind) {
+    $('status').textContent = text;
+    $('status').className = 'status' + (kind ? ' ' + kind : '');
+  }
+
+  function topic() {
+    return `${$('prefix').value.trim()}/${$('device').value.trim().toLowerCase()}/schedule`;
+  }
+
+  function connect() {
+    const url = $('broker').value.trim();
+    if (!url || !$('device').value.trim()) {
+      $('settings').open = true;
+      throw new Error('Enter the broker URL and device ID first.');
+    }
+    return mqtt.connect(url, {
+      username: $('username').value.trim() || undefined,
+      password: $('password').value || undefined,
+      clientId: 'sim-' + Math.random().toString(16).slice(2, 10),
+      connectTimeout: 10000,
+      reconnectPeriod: 0,
+    });
+  }
+
+  function readSchedule() {
+    const rates = [];
+    for (let i = 0; i < SLOTS; i++) {
+      const [priceInput, labelInput] = tbody.rows[i].querySelectorAll('input');
+      if (priceInput.value === '') throw new Error(`Enter a price for ${slotTime(i)}.`);
+      const price = Number(priceInput.value);
+      if (!Number.isFinite(price) || price < 0) throw new Error(`The price for ${slotTime(i)} must be zero or more.`);
+      const rate = { start: slotTime(i), price };
+      if (labelInput.value.trim()) rate.label = labelInput.value.trim();
+      rates.push(rate);
+    }
+    return { providerName: 'Simulator', currency: 826, rates };
+  }
+
+  function fillFrom(schedule) {
+    const rates = Array.isArray(schedule.rates) ? schedule.rates : [];
+    // Expand to 48 slots: each slot takes the rate that started at or before it.
+    let r = -1;
+    for (let i = 0; i < SLOTS; i++) {
+      while (r + 1 < rates.length && rates[r + 1].start <= slotTime(i)) r++;
+      const [priceInput, labelInput] = tbody.rows[i].querySelectorAll('input');
+      priceInput.value = r >= 0 ? rates[r].price : '';
+      labelInput.value = r >= 0 && rates[r].label ? rates[r].label : '';
+    }
+  }
+
+  $('fill').addEventListener('click', () => {
+    const v = $('fillValue').value;
+    if (v === '') return;
+    for (const row of tbody.rows) row.querySelector('input').value = v;
+  });
+
+  $('save').addEventListener('click', () => {
+    let schedule, client;
+    try {
+      schedule = readSchedule();
+      client = connect();
+    } catch (e) {
+      setStatus(e.message, 'error');
+      return;
+    }
+    $('save').disabled = true;
+    setStatus('Connecting…');
+    const done = (text, kind) => { setStatus(text, kind); $('save').disabled = false; client.end(true); };
+    client.on('error', (e) => done('Connection failed: ' + e.message, 'error'));
+    client.on('connect', () => {
+      client.publish(topic(), JSON.stringify(schedule), { qos: 1, retain: true }, (err) => {
+        if (err) done('Publish failed: ' + err.message, 'error');
+        else done(`Saved at ${new Date().toLocaleTimeString()}. The device picks it up within a few seconds, or when it next connects.`, 'ok');
+      });
+    });
+  });
+
+  $('load').addEventListener('click', () => {
+    let client;
+    try { client = connect(); } catch (e) { setStatus(e.message, 'error'); return; }
+    $('load').disabled = true;
+    setStatus('Connecting…');
+    let timer;
+    const done = (text, kind) => { clearTimeout(timer); setStatus(text, kind); $('load').disabled = false; client.end(true); };
+    client.on('error', (e) => done('Connection failed: ' + e.message, 'error'));
+    client.on('message', (t, payload) => {
+      try {
+        fillFrom(JSON.parse(payload.toString()));
+        done('Loaded the saved prices.', 'ok');
+      } catch {
+        done('The saved message isn\'t a valid schedule.', 'error');
+      }
+    });
+    client.on('connect', () => {
+      client.subscribe(topic(), { qos: 1 }, (err) => {
+        if (err) return done('Subscribe failed: ' + err.message, 'error');
+        // A retained message arrives straight away; if nothing comes, nothing has been saved.
+        timer = setTimeout(() => done('Nothing saved for this device yet.'), 3000);
+      });
+    });
+  });
+</script>
+<style>.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }</style>
+</body>
+</html>

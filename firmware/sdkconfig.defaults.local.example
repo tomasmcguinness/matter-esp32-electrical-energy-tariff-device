@@ -1,0 +1,7 @@
+# Copy to sdkconfig.defaults.local and fill in your broker. That file isn't committed.
+CONFIG_MQTT_HOST="<cluster>.hivemq.cloud"
+CONFIG_MQTT_PORT=8883
+# For a local broker on plain MQTT: CONFIG_MQTT_PORT=1883 and CONFIG_MQTT_USE_TLS=n
+CONFIG_MQTT_USE_TLS=y
+CONFIG_MQTT_USERNAME=""
+CONFIG_MQTT_PASSWORD=""
