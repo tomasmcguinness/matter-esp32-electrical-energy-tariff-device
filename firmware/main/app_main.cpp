@@ -80,43 +80,11 @@ extern "C" void app_main()
     }
     ESP_ERROR_CHECK(err);
 
-    //ESP_ERROR_CHECK(tariff_store_init());
-    //ESP_ERROR_CHECK(tariff_manager_init());
+    ESP_ERROR_CHECK(tariff_store_init());
+    ESP_ERROR_CHECK(tariff_manager_init());
 
     endpoint_t *endpoint = start_matter();
 
-    // // Matter doesn't log why Wi-Fi disconnected, which is what tells the causes apart
-    // // (201 = AP not found, 15 = wrong password / handshake timeout, 2/8 = AP dropped us, ...).
-    // esp_event_handler_register(
-    //     WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED,
-    //     [](void *, esp_event_base_t, int32_t, void *data) {
-    //         auto *event = static_cast<wifi_event_sta_disconnected_t *>(data);
-    //         ESP_LOGW(TAG, "Wi-Fi disconnected from '%.*s': reason %d, rssi %d", event->ssid_len, (const char *) event->ssid,
-    //                  event->reason, event->rssi);
-
-    //         // Once per boot, show the configuration the station is connecting with.
-    //         static bool logged = false;
-    //         wifi_config_t config;
-    //         if (!logged && esp_wifi_get_config(WIFI_IF_STA, &config) == ESP_OK)
-    //         {
-    //             logged = true;
-    //             wifi_country_t country;
-    //             esp_wifi_get_country(&country);
-    //             ESP_LOGW(TAG,
-    //                      "Wi-Fi config: ssid '%.32s' (%u bytes), password %u bytes, channel %u, bssid_set %d, "
-    //                      "scan_method %d, threshold authmode %d rssi %d, pmf capable %d required %d, sae_pwe %d, "
-    //                      "country '%.2s' channels %u-%u",
-    //                      (const char *) config.sta.ssid, (unsigned) strnlen((const char *) config.sta.ssid, 32),
-    //                      (unsigned) strnlen((const char *) config.sta.password, 64), config.sta.channel, config.sta.bssid_set,
-    //                      config.sta.scan_method, config.sta.threshold.authmode, config.sta.threshold.rssi,
-    //                      config.sta.pmf_cfg.capable, config.sta.pmf_cfg.required, config.sta.sae_pwe_h2e, country.cc,
-    //                      country.schan, country.schan + country.nchan - 1);
-    //         }
-    //     },
-    //     nullptr);
-
     current_price_start(endpoint::get_id(endpoint));
-    //ESP_ERROR_CHECK(tariff_manager_start());
-
-    //ESP_LOGI(TAG, "Device ID %s; prices are pushed to %s", price_push_device_id(), price_push_topic());
+    ESP_ERROR_CHECK(tariff_manager_start());
 }

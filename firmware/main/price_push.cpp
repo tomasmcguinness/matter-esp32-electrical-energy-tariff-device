@@ -36,7 +36,7 @@ const char *price_push_device_id(void)
 
 const char *price_push_topic(void)
 {
-    static std::string topic = std::string(CONFIG_MQTT_TOPIC_PREFIX) + "/" + price_push_device_id() + "/schedule";
+    static std::string topic = std::string(CONFIG_MQTT_TOPIC_PREFIX) + "/cloud/schedule";
     return topic.c_str();
 }
 
@@ -68,6 +68,8 @@ static void apply_schedule(const std::string &schedule)
 
 static void on_data(esp_mqtt_event_handle_t event)
 {
+    ESP_LOGI(TAG, "Data received (%d bytes)", event->total_data_len);
+
     if (event->total_data_len <= 0 || static_cast<size_t>(event->total_data_len) > kMaxPayloadSize)
     {
         ESP_LOGW(TAG, "Ignoring message of %d bytes", event->total_data_len);
