@@ -14,7 +14,7 @@ This project grew out of [matter-esp32-octopus-energy-gateway](https://github.co
 * `CurrentPrice` holds the price for the current half-hour. `PeriodStart` and `PeriodEnd` are the start and end of that slot, and the slot's label goes in `Description`.
 * Prices are in £ × 10⁵ (`Currency.decimalPoints = 5`) per kWh (`TariffUnit = kWh`), so 24.567p/kWh is published as `24567`.
 * The device checks the price every 30 seconds. When a new slot starts it updates `CurrentPrice` and the cluster sends a `PriceChange` event.
-* There's no forecast: the cluster's Forecasting feature isn't enabled.
+* The cluster's Forecasting feature is enabled. `PriceForecast` lists up to 56 slots, starting with the current one, and is refreshed when a new slot starts and whenever prices are pushed. Reading the attribute leaves out the slot labels; `GetDetailedForecastRequest` includes them.
 * `CurrentPrice` is null until prices have been pushed and the clock has synced.
 * If the prices take two or three distinct values and have no labels, they're labelled *Off Peak* / *Peak*, or *Off Peak* / *Standard* / *Peak*.
 

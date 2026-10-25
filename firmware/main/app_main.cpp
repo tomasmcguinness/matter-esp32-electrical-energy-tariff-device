@@ -54,7 +54,7 @@ static endpoint_t *start_matter(void)
     ABORT_APP_ON_FAILURE(node != nullptr, ESP_LOGE(TAG, "Failed to create Matter node"));
 
     // The device type needs at least one of its optional clusters, so the Commodity Price
-    // cluster is created as part of the endpoint. It has no features, so there's no forecast.
+    // cluster is created as part of the endpoint.
     endpoint::electrical_energy_tariff::config_t electrical_energy_tariff_config;
     electrical_energy_tariff_config.with_commodity_price().delegate = &commodity_price_delegate;
 
@@ -65,7 +65,11 @@ static endpoint_t *start_matter(void)
     cluster_t *cluster = cluster::get(endpoint, CommodityPrice::Id);
     ABORT_APP_ON_FAILURE(cluster != nullptr, ESP_LOGE(TAG, "Failed to create commodity_price cluster"));
 
-    esp_err_t err = esp_matter::start(app_event_cb);
+    // The cluster's Instance reads the feature map when Matter starts, so Forecasting must be added first.
+    esp_err_t err = cluster::commodity_price::feature::forecasting::add(cluster);
+    ABORT_APP_ON_FAILURE(err == ESP_OK, ESP_LOGE(TAG, "Failed to add Forecasting feature, err:%d", err));
+
+    err = esp_matter::start(app_event_cb);
     ABORT_APP_ON_FAILURE(err == ESP_OK, ESP_LOGE(TAG, "Failed to start Matter, err:%d", err));
 
     return endpoint;
